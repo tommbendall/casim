@@ -261,6 +261,7 @@ contains
           if (.not. l_warm) then
             cpm = cpm + (ci_cpm - cpv_cpm)                                     &
               * (tend_temp(k,i_qi)+tend_temp(k,i_qs)+tend_temp(k,i_qg))
+          end if
           tend_temp(k, i_th) = (tend_temp(k, i_ql)+tend_temp(k,i_qr))          &
                                * Lv_full/cpm * rexner(k,ixy_inner)
           if (.not. l_warm) then

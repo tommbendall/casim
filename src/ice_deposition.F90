@@ -13,7 +13,8 @@ module ice_deposition
        , i_isub, i_ssub, i_gsub, i_iacw, i_raci, i_sacw, i_sacr  &
        , i_gacw, i_gacr
   use mphys_parameters, only: hydro_params, rain_params, cloud_params
-  use mphys_constants, only: Ls, Lf, ka, Dv, Rv
+  use mphys_constants, only: Ls, Lf, ka, Dv, Rv, Tm
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm, ci_cpm
   use qsat_funs, only: qisaturation
   use thresholds, only: thresh_small
   use aerosol_routines, only: aerosol_active
@@ -78,6 +79,7 @@ contains
     real(wp) :: n0, lam, mu
     real(wp) :: V_x, AB
     real(wp) :: cf
+    real(wp) :: Ls_full, Lf_full
 
     logical :: l_suball
 
@@ -167,13 +169,15 @@ contains
             call ventilation_1M_2M(ixy_inner, k, V_x, n0, lam, mu, params)
           endif
              
-          AB=1.0/(Ls*Ls/(Rv*ka*TdegK(k,ixy_inner)*TdegK(k,ixy_inner))*rho(k,ixy_inner)+1.0/(Dv*qis(k)))
+          Ls_full = Ls - (ci_cpm - cpv_cpm)*(TdegK(k,ixy_inner) - Tm)
+          Lf_full = Lf + (cl_cpm - ci_cpm)*(TdegK(k,ixy_inner) - Tm)
+          AB=1.0/(Ls_full*Ls_full/(Rv*ka*TdegK(k,ixy_inner)*TdegK(k,ixy_inner))*rho(k,ixy_inner)+1.0/(Dv*qis(k)))
           dmass=(qv/qis(k)-1.0)*V_x*AB *cf ! grid mean
              
           ! Include latent heat effects of collection of rain and cloud
           ! as done in Milbrandt & Yau (2005)
           if (l_latenteffects) then
-            dmass=dmass - Lf*Ls/(Rv*ka*TdegK(k,ixy_inner)*TdegK(k,ixy_inner))                      &
+            dmass=dmass - Lf_full*Ls_full/(Rv*ka*TdegK(k,ixy_inner)*TdegK(k,ixy_inner))                      &
                   *(procs(cloud_params%i_1m, i_acw%id)%column_data(k)          &
                   + procs(rain_params%i_1m, i_acr%id)%column_data(k))
           end if

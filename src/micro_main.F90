@@ -25,7 +25,8 @@ module micro_main
        i_cfl, i_cfr, i_cfi, i_cfs, i_cfg, l_reisner_graupel_embryo
 ! use mphys_switches, only: l_rain,
   use passive_fields, only: rexner, min_dz
-  use mphys_constants, only: cp, Lv
+  use mphys_constants, only: cpd => cp, Lv, Tm
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm, ci_cpm
   use distributions, only: query_distributions, initialise_distributions, dist_lambda, dist_mu, dist_n0, dist_lams
   use passive_fields, only: initialise_passive_fields, set_passive_fields, TdegK, rhcrit_1d
   use autoconversion, only: raut
@@ -509,6 +510,7 @@ contains
                 dbz_s_c(nz),   dbz_l_c(nz), dbz_r_c(nz)
 
     INTEGER :: kc ! Casim Z-level
+    real(wp) :: T_diag, cpm, Lv_full
 
     INTEGER(KIND=jpim), PARAMETER :: zhook_in  = 0
     INTEGER(KIND=jpim), PARAMETER :: zhook_out = 1
@@ -787,8 +789,15 @@ contains
            if ( casdiags % l_tendency_dg ) then
               DO k = k_start, k_end
                  kc = k - k_start + 1
+                 T_diag = qfields(kc,i_th,ixy_inner) / rexner(kc,ixy_inner)
+                 cpm = cpd + cpv_cpm*qfields(kc,i_qv,ixy_inner)               &
+                           + cl_cpm*(qfields(kc,i_ql,ixy_inner) + qfields(kc,i_qr,ixy_inner))
+                 if (.not. l_warm) cpm = cpm                                  &
+                     + ci_cpm*(qfields(kc,i_qi,ixy_inner)                     &
+                     + qfields(kc,i_qs,ixy_inner) + qfields(kc,i_qg,ixy_inner))
+                 Lv_full = Lv - (cl_cpm - cpv_cpm)*(T_diag - Tm)
                  casdiags % dth_cond_evap(i,j,k) = procs(cloud_params%i_1m,i_cond%id,ixy_inner)%column_data(kc) * &
-                                                   Lv/cp * rexner(kc,ixy_inner)
+                                                   Lv_full/cpm * rexner(kc,ixy_inner)
                  casdiags % dqv_cond_evap(i,j,k) = -(procs(cloud_params%i_1m,i_cond%id,ixy_inner)%column_data(kc))
                  casdiags % dth_total(i,j,k) = tend(kc,i_th,ixy_inner)
                  casdiags % dqv_total(i,j,k) = tend(kc,i_qv,ixy_inner)

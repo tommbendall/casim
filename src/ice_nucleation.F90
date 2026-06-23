@@ -8,7 +8,7 @@ module ice_nucleation
        aero_index, l_prf_cfrac, iopt_act, i_cfl, i_cfi, l_nudge_to_cooper
   use process_routines, only: process_rate, i_inuc, i_dnuc
   use mphys_parameters, only: nucleated_ice_mass, cloud_params, ice_params
-  use mphys_constants, only: Ls, cp, pi, m3_to_cm3
+  use mphys_constants, only: Ls, pi, m3_to_cm3
   use qsat_funs, only: qsaturation, qisaturation
   use thresholds, only: ql_small, w_small, ni_tidy, nl_tidy, cfliq_small
   use aerosol_routines, only: aerosol_phys, aerosol_chem, aerosol_active

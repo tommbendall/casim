@@ -2,11 +2,13 @@ module homogeneous
   use variable_precision, only: wp
   use passive_fields, only: rho, pressure, w, exner
   use mphys_switches, only: i_qv, i_ql, i_qi, i_ni, i_th , hydro_complexity, i_am6, i_an2, l_2mi, l_2ms, l_2mg &
-       , i_ns, i_ng, iopt_inuc, i_am7, i_an6, i_am9 , i_m3r, i_m3g, i_qr, i_qg, i_nr, i_ng, i_nl          &
+       , i_ns, i_ng, iopt_inuc, i_am7, i_an6, i_am9 , i_m3r, i_m3g, i_qr, i_qg, i_nr, i_ng, i_nl &
+       , i_qs, l_warm                                                          &
        , isol, i_am4, i_am8, active_ice, l_process, l_prf_cfrac
   use process_routines, only: process_rate, i_homr, i_homc, i_dhomc, i_dhomr
   use mphys_parameters, only: rain_params, graupel_params, cloud_params, ice_params, T_hom_freeze
-  use mphys_constants, only:  Ls, cp, Mw, g, Rd, Ru, Lv, Lf, Dv, Rv
+  use mphys_constants, only:  Ls, cpd => cp, Mw, g, Rd, Ru, Lv, Lf, Dv, Rv, Tm
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm, ci_cpm
   use qsat_funs, only: qsaturation, qisaturation
   use thresholds, only: thresh_small, thresh_tidy
   use aerosol_routines, only: aerosol_phys, aerosol_chem, aerosol_active
@@ -207,6 +209,7 @@ contains
 
     real(wp) :: Tk, cap, rhoi, Ei, Ew, bm, Ai, B0, Bis, aw, dnumberi, &
                 ka, min_homog_ni, dniraw, d0_homog
+    real(wp) :: T, cpm, Lv_full, Lf_full
     logical :: l_use_critical_w = .True.  !ni controlled by w and environmental conditions
     logical :: l_use_ni_limit = .False.   !ni limited to max per timestep
     
@@ -231,11 +234,18 @@ contains
        if (l_Tcold(k)) then
           th = qfields(k, i_th)
           Tc = th*exner(k,ixy_inner) - 273.15
-          ql = qfields(k, i_ql) 
-          
+          ql = qfields(k, i_ql)
+          T = th*exner(k,ixy_inner)
+          cpm = cpd + cpv_cpm*qfields(k,i_qv)                                  &
+              + cl_cpm*(qfields(k,i_ql) + qfields(k,i_qr))
+          if (.not. l_warm) cpm = cpm                                          &
+              + ci_cpm*(qfields(k,i_qi) + qfields(k,i_qs) + qfields(k,i_qg))
+          Lv_full = Lv - (cl_cpm - cpv_cpm)*(T - Tm)
+          Lf_full = Lf + (cl_cpm - ci_cpm)*(T - Tm)
+
           l_condition=(Tc < T_hom_freeze .and. ql > thresh_tidy(i_ql))
           if (l_condition) then
-             dmass=min(ql, cp*(T_hom_freeze - Tc)/Lf)/dt    
+             dmass=min(ql, cpm*(T_hom_freeze - Tc)/Lf_full)/dt
              if (cloud_params%l_2m) then    
                 dnumber=dmass*(qfields(k, i_nl))/ql   
                 dnumberi=dnumber ! this will be overwritten if l_use_critical_W is used   
@@ -265,11 +275,11 @@ contains
                    Ew=qsaturation(Tk,pressure(k,ixy_inner)/100.)*pressure(k,ixy_inner)/ &
                         (qsaturation(Tk,pressure(k,ixy_inner)/100.)+0.62198) !vap press over liq [Pa]
                    
-                   bm=1.0/(qv)+Lv*Lf/(cp*Rv*Tk**2)
+                   bm=1.0/(qv)+Lv_full*Lf_full/(cpm*Rv*Tk**2)
                    Ai=1.0/(rhoi*Lf**2/(ka*Rv*Tk**2)+rhoi*Rv*Tk/(Ei*Dv))
                    B0=4.0*pi*cap*rhoi*Ai/rho(k,ixy_inner)
                    Bis=bm*B0*(Ew/Ei-1.0)
-                   aw=g/(Rd*Tk)*(Lv*Rd/(cp*Rv*Tk)-1.0)
+                   aw=g/(Rd*Tk)*(Lv_full*Rd/(cpm*Rv*Tk)-1.0)
                    
                    dnumberi=max(w(k,ixy_inner),0.0)*(aw/Bis)/d0_homog  / dt  !convert to a rate
                    dniraw=dnumberi

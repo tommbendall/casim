@@ -80,7 +80,7 @@ contains
   end subroutine calc_nccn
 
 
-  subroutine calc_LHS(w, T, pressure, alpha_c, entrain_fraction, LHSout)
+  subroutine calc_LHS(w, T, pressure, alpha_c, entrain_fraction, cpm, LHSout)
 
     USE yomhook, ONLY: lhook, dr_hook
     USE parkind1, ONLY: jprb, jpim
@@ -92,6 +92,7 @@ contains
     real(wp), intent(in) :: pressure ! Pressure (Pa)
     real(wp), intent(in) :: alpha_c ! Condensation coefficient
     real(wp), intent(in) :: entrain_fraction ! Entrainment_fraction
+    real(wp), intent(in) :: cpm
     real(wp), intent(out) :: LHSout
 
     ! Local variables
@@ -122,8 +123,8 @@ contains
 
     LvT = Lv -(4217.4-1870.0)*Tc
 
-    psi1 = 9.8*(LvT/(eps*cp*T)-1.0)/(T*Rd)*(1-entrain_fraction)
-    psi2 = eps*pressure/es+LvT**2/(Rv*T**2*cp)
+    psi1 = 9.8*(LvT/(eps*cpm*T)-1.0)/(T*Rd)*(1-entrain_fraction)
+    psi2 = eps*pressure/es+LvT**2/(Rv*T**2*cpm)
 
     if (int(dv_flag)==1)then
        Dv_here=Dv
@@ -387,7 +388,7 @@ contains
   end subroutine calc_KC
 
   subroutine solve_nccn_household(order,niter,sa_in,  &
-     w,T,pressure,alpha_c,ent_fraction,               &
+     w,T,pressure,alpha_c,ent_fraction,cpm,           &
      smax,nccn,nccni)
 
     USE yomhook, ONLY: lhook, dr_hook
@@ -398,7 +399,7 @@ contains
 
     integer, intent(in) :: order, niter
     real(wp), intent(in)    :: sa_in
-    real(wp), intent(in)    :: w,T,pressure, alpha_c, ent_fraction
+    real(wp), intent(in)    :: w,T,pressure, alpha_c, ent_fraction, cpm
     real(wp), intent(out)   :: smax, nccn
     real(wp), intent(out)   :: nccni(3) ! diagnostic for each mode
 
@@ -428,7 +429,7 @@ contains
     end if
 
     call calc_KC(T)
-    call calc_LHS(w, T, pressure, alpha_c, ent_fraction, LHS)
+    call calc_LHS(w, T, pressure, alpha_c, ent_fraction, cpm, LHS)
     LHS_hold = LHS
     wdiag = w
     Tdiag = T
@@ -479,7 +480,7 @@ contains
     end subroutine solve_nccn_household
 
   subroutine solve_nccn_brent( &
-     w,T,pressure,alpha_c,ent_fraction,               &
+     w,T,pressure,alpha_c,ent_fraction,cpm,           &
      smax,nccn,nccni)
 
     USE yomhook, ONLY: lhook, dr_hook
@@ -487,7 +488,7 @@ contains
 
     implicit none
 
-    real(wp), intent(in)    :: w,T,pressure, alpha_c, ent_fraction
+    real(wp), intent(in)    :: w,T,pressure, alpha_c, ent_fraction, cpm
     real(wp), intent(out)   :: smax, nccn
     real(wp), intent(out)   :: nccni(3) ! diagnostic for each mode
 
@@ -522,7 +523,7 @@ contains
     end if
 
     call calc_KC(T)
-    call calc_LHS(w, T, pressure, alpha_c, ent_fraction, LHS)
+    call calc_LHS(w, T, pressure, alpha_c, ent_fraction, cpm, LHS)
 
     LHS_hold = LHS
     wdiag = w

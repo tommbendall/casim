@@ -1,12 +1,13 @@
 module condensation
   use variable_precision, only: wp
   use passive_fields, only: rho, pressure, w, exner
-  use mphys_switches, only: i_qv, i_ql, i_nl, i_th, i_qr, l_warm, &
+  use mphys_switches, only: i_qv, i_ql, i_nl, i_th, i_qr, i_qi, i_qs, i_qg, l_warm, &
        i_am4, i_am1, i_an1, i_am2, i_an2, i_am3, i_an3, i_am6, i_an6, i_am9, i_an11, i_an12,  &
        cloud_params, l_process, l_passivenumbers,l_passivenumbers_ice, aero_index, &
        l_cfrac_casim_diag_scheme
   use process_routines, only: process_rate, i_cond, i_aact
-  use mphys_constants, only: Lv, cp
+  use mphys_constants, only: cpd => cp, Lv, Tm
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm, ci_cpm
   use qsat_funs, only: qsaturation, dqwsatdt
   use thresholds, only: ql_small, ss_small, thresh_tidy
   use activation, only: activate
@@ -96,7 +97,7 @@ contains
 
   end subroutine condevp_finalise  
 
-  subroutine condevp(ixy_inner, dt, nz, qfields, procs, aerophys, aerochem,   &
+  subroutine condevp(ixy_inner, dt, nz, qfields, procs, aerophys, aerochem,    &
        aeroact, dustphys, dustchem, dustliq, aerosol_procs, rhcrit_lev)
 
     USE yomhook, ONLY: lhook, dr_hook
@@ -144,6 +145,7 @@ contains
     real(wp) :: cloud_mass_new, abs_liquid_t
 
     real(wp) :: cfrac, cfrac_old
+    real(wp) :: T, cpm, cpm_dag, Lv_full
 
     logical :: l_docloud  ! do we want to do the calculation of cond/evap
     integer :: k
@@ -181,6 +183,12 @@ contains
     if (cloud_params%l_2m) cloud_number=qfields(k, i_nl)
 
     th=qfields(k, i_th)
+    T = th*exner(k,ixy_inner)
+    cpm = cpd + cpv_cpm*qfields(k,i_qv)                                        &
+              + cl_cpm*(qfields(k,i_ql) + qfields(k,i_qr))
+    if (.not. l_warm) cpm = cpm                                                &
+        + ci_cpm*(qfields(k,i_qi) + qfields(k,i_qs) + qfields(k,i_qg))
+    Lv_full = Lv - (cl_cpm - cpv_cpm)*(T - Tm)
 
     if (casim_parent == parent_um ) then
 
@@ -193,7 +201,8 @@ contains
       if (l_cfrac_casim_diag_scheme) then
         ! work out saturation vapour pressure/mixing ratio based on
         ! liquid water temperature
-        abs_liquid_T=(th*exner(k,ixy_inner))-((lv * cloud_mass )/cp)
+        cpm_dag = cpm + (cpv_cpm - cl_cpm)*cloud_mass
+        abs_liquid_T = (cpm*T - Lv_full*cloud_mass) / cpm_dag
         qs=qsaturation(abs_liquid_T, pressure(k,ixy_inner)/100.0)
       else
         qs=qsaturation(th*exner(k,ixy_inner), pressure(k,ixy_inner)/100.0)
@@ -240,7 +249,7 @@ contains
         dmass=max(-cloud_mass, (cloud_mass_new-cloud_mass))/dt
       else
         dqsdt=dqwsatdt(qs, th*exner(k,ixy_inner))
-        qsatfac=1.0/(1.0 + Lv/Cp*dqsdt)
+        qsatfac=1.0/(1.0 + Lv_full/cpm*dqsdt)
         dmass=max(-cloud_mass, (qv-qs)*qsatfac )/dt
       end if ! l_cfrac_casim_diag_scheme
 
@@ -255,7 +264,7 @@ contains
             w_act=max(w(k,ixy_inner), 0.01_wp)
 
             call activate(tau, cloud_mass, cloud_number, w_act,         &
-                 rho(k,ixy_inner), dnumber, dmac, th*exner(k,ixy_inner), pressure(k,ixy_inner),       &
+                 rho(k,ixy_inner), dnumber, dmac, th*exner(k,ixy_inner), pressure(k,ixy_inner), cpm, &
                  cfrac, cfrac_old, aerophys(k), aerochem(k),            & 
                  aeroact(k), dustphys(k), dustchem(k), dustliq(k),      &
                  dnccn_all, dmac_all, dnumber_d, dmad,                  &

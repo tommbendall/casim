@@ -6,7 +6,8 @@ module ice_melting
   use passive_fields, only: TdegC, qws0, rho
   use mphys_parameters, only: ice_params, snow_params, graupel_params, rain_params, DR_melt, hydro_params, ZERO_REAL_WP
   use mphys_switches, only: i_qv, i_am4, i_am7, i_am8, i_am9, l_process, l_gamma_online
-  use mphys_constants, only: Lv, Lf, Ka, Cwater, Cice, cp, Dv
+  use mphys_constants, only: Lv, Lf, Ka, Cwater, Cice, Dv
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm
   use thresholds, only: thresh_tidy
   use m3_incs, only: m3_inc_type2, m3_inc_type3, m3_inc_type4
   use ventfac, only: ventilation_1M_2M, ventilation_3M
@@ -61,6 +62,7 @@ contains
     logical :: l_meltall ! do we melt everything?
     real(wp) :: dmac, dmad
     real(wp) :: cf
+    real(wp) :: Lv_full
 
     integer :: k
     
@@ -159,7 +161,8 @@ contains
                    call ventilation_1M_2M(ixy_inner, k, V_x, n0, lam, mu, params)
                 endif
                 
-                dmass=(1.0/(rho(k,ixy_inner)*Lf))*(Ka*TdegC(k,ixy_inner) + Lv*Dv*rho(k,ixy_inner)*(qv - qws0(k,ixy_inner))) * V_x&
+                Lv_full = Lv - (cl_cpm - cpv_cpm)*TdegC(k,ixy_inner)
+                dmass=(1.0/(rho(k,ixy_inner)*Lf))*(Ka*TdegC(k,ixy_inner) + Lv_full*Dv*rho(k,ixy_inner)*(qv - qws0(k,ixy_inner))) * V_x&
                      + (Cwater*TdegC(k,ixy_inner)/Lf)*acc_correction
                 dmass=dmass*cf ! grid mean
 

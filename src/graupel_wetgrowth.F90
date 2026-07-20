@@ -8,6 +8,7 @@ module graupel_wetgrowth
        rain_params, T_hom_freeze, DR_melt
   use mphys_switches, only: i_qv, l_kfsm, l_gamma_online, l_prf_cfrac, i_cfg
   use mphys_constants, only: Lv, Lf, Ka, Cwater, Cice, Dv
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm
   use thresholds, only: thresh_small, cfliq_small
 
   use ventfac, only: ventilation_3M, ventilation_1M_2M
@@ -58,6 +59,7 @@ contains
     real(wp) :: pgwet       !< Amount of liquid that graupel can freeze withouth shedding
     real(wp) :: pgacsum     !< Sum of all graupel accretion terms
     real(wp) :: cf_graupel
+    real(wp) :: Lv_full
 
     integer :: k
 
@@ -126,7 +128,8 @@ contains
                    call ventilation_1M_2M(ixy_inner, k, V_x, n0, lam, mu, graupel_params)
                 endif
 
-                pgwet=(910.0/graupel_params%density)**0.625*(Lv*Dv*(qws0(k,ixy_inner)-qv)- &
+                Lv_full = Lv - (cl_cpm - cpv_cpm)*TdegC(k,ixy_inner)
+                pgwet=(910.0/graupel_params%density)**0.625*(Lv_full*Dv*(qws0(k,ixy_inner)-qv)- &
                      Ka*TdegC(k,ixy_inner)/rho(k,ixy_inner))/(Lf+Cwater*TdegC(k,ixy_inner))*V_x *cf_graupel ! grid mean
                 pgwet=pgwet+(pgaci+pgacs)*(1.0-Cice*TdegC(k,ixy_inner)/(Lf+Cwater*TdegC(k,ixy_inner)))
 

@@ -7,7 +7,8 @@ module snow_autoconversion
        l_harrington
 ! use mphys_switches, only:  i_m3s
   use mphys_constants, only: fixed_ice_number,   &
-       Lv,ka, Dv, Rv
+       Lv,ka, Dv, Rv, Tm
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm
 ! use mphys_parameters, only: mu_saut
   use mphys_parameters, only: snow_params, ice_params,   &
        DImax, tau_saut, DI2S
@@ -51,6 +52,7 @@ contains
     real(wp) :: th
     real(wp) :: qv
     real(wp) :: lami_min , AB, qis
+    real(wp) :: Lv_full
     integer :: k
 
     logical :: l_condition ! logical condition to switch on process
@@ -92,8 +94,9 @@ contains
           if (l_condition) then
              
             if (l_harrington) then
+              Lv_full = Lv - (cl_cpm - cpv_cpm)*(TdegK(k,ixy_inner) - Tm)
               !< AB This is used elsewhere, so we should do it more efficiently.
-              AB=1.0/(Lv*Lv/(Rv*ka*TdegK(k,ixy_inner)*TdegK(k,ixy_inner))*   &
+              AB=1.0/(Lv_full*Lv_full/(Rv*ka*TdegK(k,ixy_inner)*TdegK(k,ixy_inner))*   &
                  rho(k,ixy_inner)+1.0/(Dv*qis))
               dnumber=4.0/DImax/ice_params%density*(qv-qis)*                 &
                       rho(k,ixy_inner)*ice_number*exp(-ice_lam*DImax)*Dv/AB

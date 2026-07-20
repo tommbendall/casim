@@ -2,10 +2,11 @@ module sum_process
   use variable_precision, only: wp
 ! use mphys_die, only: throw_mphys_error, incorrect_opt, std_msg
   use type_process, only: process_name, process_rate
-  use mphys_switches, only: i_th, i_ql, i_qr, i_qs, i_qi, i_qg, l_warm, ntotalq, ntotala
+  use mphys_switches, only: i_th, i_ql, i_qr, i_qs, i_qi, i_qg, i_qv, l_warm, ntotalq, ntotala
   use passive_fields, only: rexner
 ! use passive_fields, only: rho
-  use mphys_constants, only: cp, Lv, Ls
+  use mphys_constants, only: cpd => cp, Lv, Ls, Tm
+  use casim_cpm_mod,   only: cpv_cpm, cl_cpm, ci_cpm
   use mphys_parameters, only: ZERO_REAL_WP
 ! use mphys_parameters, only: hydro_params, snow_params, rain_params, graupel_params
 ! use m3_incs, only: m3_inc_type2
@@ -106,6 +107,7 @@ contains
 !   real(wp) :: dm1,dm2,dm3,m1,m2,m3
     integer :: k, iq, iproc, i
     integer :: nproc
+    real(wp) :: T, cpm, Lv_full, Ls_full
 
     logical :: do_thermal
 !   logical :: do_third  ! Currently not plumbed in, so explicitly calculated for each process
@@ -246,14 +248,29 @@ contains
     ! (this overwrites anything that was already stored in the theta tendency)
     if (do_thermal) then
        do k=1,nz
-          tend_temp(k, i_th)=(tend_temp(k, i_ql)+tend_temp(k,i_qr))*Lv/cp * rexner(k,ixy_inner)
-       enddo
-       if (.not. l_warm) then 
-          do k=1, nz
-             tend_temp(k, i_th)=tend_temp(k,i_th)+ &
-               (tend_temp(k, i_qi)+tend_temp(k, i_qs)+tend_temp(k,i_qg))*Ls/cp *rexner(k,ixy_inner)
-          end do
-       endif
+          T = qfields(k, i_th) / rexner(k, ixy_inner)
+          Lv_full = Lv - (cl_cpm - cpv_cpm) * (T - Tm)
+          cpm = cpd + cpv_cpm*qfields(k, i_qv)                                 &
+                    + cl_cpm*(qfields(k, i_ql) + qfields(k, i_qr))
+          if (.not. l_warm) then
+            cpm = cpm + ci_cpm*(qfields(k, i_qi) + qfields(k, i_qs) + qfields(k, i_qg))
+          end if
+          ! Adjust the heat capacity to use mixing ratios after phase change,
+          ! to ensure enthalpy is conserved
+          cpm = cpm + (cl_cpm - cpv_cpm)*(tend_temp(k,i_ql)+tend_temp(k,i_qr))
+          if (.not. l_warm) then
+            cpm = cpm + (ci_cpm - cpv_cpm)                                     &
+              * (tend_temp(k,i_qi)+tend_temp(k,i_qs)+tend_temp(k,i_qg))
+          end if
+          tend_temp(k, i_th) = (tend_temp(k, i_ql)+tend_temp(k,i_qr))          &
+                               * Lv_full/cpm * rexner(k,ixy_inner)
+          if (.not. l_warm) then
+             Ls_full = Ls - (ci_cpm - cpv_cpm) * (T - Tm)
+             tend_temp(k, i_th) = tend_temp(k, i_th)                           &
+               + (tend_temp(k, i_qi)+tend_temp(k, i_qs)+tend_temp(k,i_qg))     &
+               * Ls_full/cpm * rexner(k,ixy_inner)
+          end if
+       end do
     end if
 
     if (do_update) then

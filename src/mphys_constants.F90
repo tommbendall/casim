@@ -44,6 +44,7 @@ module mphys_constants
   real(wp) :: Dv = 0.226e-4   ! diffusivity of water vapour in air
   real(wp), parameter :: Lv = 0.2501e7   ! Latent heat of vapourization
   real(wp), parameter :: Ls = 0.2835e7   ! Latent heat of sublimation
+  real(wp), parameter :: Tm = 273.15     ! Melting point of ice
   real(wp), parameter :: Lf = Ls - Lv    ! Latent heat of fusion
   real(wp) :: ka = 0.243e-1   ! thermal conductivity of air
   real(wp) :: g = 9.8         ! gravitational acceleration ms-2

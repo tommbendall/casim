@@ -14,7 +14,7 @@ module activation
   use thresholds, only: w_small, nl_tidy, ni_tidy, ccn_tidy, ql_small
   Use shipway_parameters, only: max_nmodes, nmodes, Ndi, &
      rdi, sigmad, bi, betai, use_mode, nd_min
-  use shipway_constants, only: Mw, rhow, eps, Rd, Dv, Lv, cp, &
+  use shipway_constants, only: Mw, rhow, eps, Rd, Dv, Lv, &
       Dv_mean, alpha_c, zetasa, Ru
   use qsat_funs, only: qsaturation,dqwsatdt
   use shipway_activation_mod, only: solve_nccn_household, solve_nccn_brent
@@ -39,7 +39,7 @@ module activation
 
 contains
 
-  subroutine activate(dt, cloud_mass, cloud_number, w, rho, dnumber, dmac, T, p,  &
+  subroutine activate(dt, cloud_mass, cloud_number, w, rho, dnumber, dmac, T, p, cpm, &
        cfliq,cfliq_old, aerophys, aerochem, aeroact, dustphys, dustchem,   &
        dustliq, dnccn_all, dmac_all, dnumber_d, dmass_d, dnccnd_all,dmad_all,  &
        smax,ait_cdnc,accum_cdnc, tot_cdnc,activated_arg,activated_cloud)
@@ -54,7 +54,7 @@ contains
     ! Subroutine arguments
 
     real(wp), intent(in) :: dt
-    real(wp), intent(in) :: cloud_mass, cloud_number, w, rho, T, p, &
+    real(wp), intent(in) :: cloud_mass, cloud_number, w, rho, T, p, cpm, &
          cfliq, cfliq_old
     real(wp), intent(out) ::  dnumber, dmac
     type(aerosol_phys), intent(in) :: aerophys
@@ -188,7 +188,7 @@ contains
       bigGdiffusion = rhow*Ru*T/(p*qs*Dv_here*0.018)
       bigGthermal = (LvT*rhow/(0.024*T))*(LvT*0.018/(Ru*T) -1)
       bigG = 1.0/(bigGdiffusion+bigGthermal)
-      gammaR= 0.018*LvT*LvT/(cp*Ru*T*T)
+      gammaR= 0.018*LvT*LvT/(cpm*Ru*T*T)
       gammaL = 0.029/(qs*0.018)
       gammastar = 4*pi*rhow*(gammaL+gammaR)/rho
       tau = 1.0/(gammastar*bigG*cloud_number_work_old*rho*cloud_radius_work)
@@ -201,7 +201,7 @@ contains
     end if
 
     ! This agrees well with the version in Ghan et al
-    alpha = 9.8*(LvT/(eps*cp*T)-1.0)/(T*Rd)*(1-ent_fraction)
+    alpha = 9.8*(LvT/(eps*cpm*T)-1.0)/(T*Rd)*(1-ent_fraction)
 
     smax_cloud= alpha*w*tau
 
@@ -364,14 +364,14 @@ contains
           select case (solve_select)
             case (solve_household)
               call solve_nccn_household( order, niter, smax0, w, T, p, alpha_c, &
-                                         ent_fraction, smax, active, nccni     )
+                                         ent_fraction, cpm, smax, active, nccni)
             case (solve_brent)
-              call solve_nccn_brent(w, T, p, alpha_c, ent_fraction,      &
+              call solve_nccn_brent(w, T, p, alpha_c, ent_fraction, cpm,  &
                                   smax, active, nccni)
           end select
         else
            LvT = Lv -(4217.4-1870.0)*(T-273.15)
-           alpha = 9.8*(LvT/(eps*cp*T)-1.0)/(T*Rd)*(1-ent_fraction)
+           alpha = 9.8*(LvT/(eps*cpm*T)-1.0)/(T*Rd)*(1-ent_fraction)
            smax= alpha*w*tau
            !call calc_nccn(smax,active,nccni)
         end if

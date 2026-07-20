@@ -7,7 +7,8 @@ module evaporation
        l_separate_rain, i_am6, i_an6, i_am9, l_warm, i_an11, i_an12, l_passivenumbers, &
        l_passivenumbers_ice, l_inhom_revp, l_gamma_online, &
        l_bypass_which_mode, iopt_which_mode
-  use mphys_constants, only: Lv,ka, Dv, Rv
+  use mphys_constants, only: Lv,ka, Dv, Rv, Tm
+  use casim_cpm_mod, only: cpv_cpm, cl_cpm
   use mphys_parameters, only: c_r, rain_params
   use process_routines, only: process_rate, i_prevp, i_arevp
   use thresholds, only: qr_small, ss_small, qr_tidy, ql_tidy
@@ -65,6 +66,7 @@ contains
     logical :: l_rain_test ! conditional test on rain
 
     real(wp) :: dmac, dmac1, dmac2, dnac1, dnac2, dmacd
+    real(wp) :: Lv_full
     integer :: k
 
     character(len=*), parameter :: RoutineName='REVP'
@@ -107,7 +109,8 @@ contains
                 call ventilation_1M_2M(ixy_inner, k, V_r, n0, lam, mu, rain_params)
              endif
 
-             AB=1.0/(Lv**2/(Rv*ka)*rho(k,ixy_inner)*TdegK(k,ixy_inner)**(-2)+1.0/(Dv*qws(k,ixy_inner)))
+             Lv_full = Lv - (cl_cpm - cpv_cpm)*(TdegK(k,ixy_inner) - Tm)
+             AB=1.0/(Lv_full**2/(Rv*ka)*rho(k,ixy_inner)*TdegK(k,ixy_inner)**(-2)+1.0/(Dv*qws(k,ixy_inner)))
              dmass=(1.0-qv/qws(k,ixy_inner))*V_r*AB  *cf !grid mean
              
              dmass=MIN(dmass,rain_mass/dt)

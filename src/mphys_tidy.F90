@@ -4,21 +4,22 @@ module mphys_tidy
   use aerosol_routines, only: aerosol_active
   use thresholds, only: thresh_tidy, thresh_atidy
   use passive_fields, only: exner, pressure
-  use mphys_switches, only:                       &
-       i_qv, i_ql, i_nl, i_qr, i_nr, i_m3r, i_th, &
-       i_qi, i_ni, i_qs, i_ns, i_m3s,             &
-       i_qg, i_ng, i_m3g,                         &
+  use mphys_switches, only:                                                    &
+       i_qv, i_ql, i_nl, i_qr, i_nr, i_m3r, i_th,                              &
+       i_qi, i_ni, i_qs, i_ns, i_m3s,                                          &
+       i_qg, i_ng, i_m3g,                                                      &
 !       l_3mr, l_3mg, l_3ms,                      &
-       l_2mc, l_2mr,                              &
-       l_2mi, l_2ms, l_2mg,                       &
-       i_an2, i_am2, i_am4, i_am5, l_warm,        &
-       i_an6, i_am6, i_am7, i_am8, i_am9,         &
-       i_an11, i_an12,                            &
-       l_process, ntotalq, ntotala,               &
-       i_qstart, i_nstart, i_m3start,             &
-       l_separate_rain, l_tidy_conserve_E, l_tidy_conserve_q, &
+       l_2mc, l_2mr,                                                           &
+       l_2mi, l_2ms, l_2mg,                                                    &
+       i_an2, i_am2, i_am4, i_am5, l_warm,                                     &
+       i_an6, i_am6, i_am7, i_am8, i_am9,                                      &
+       i_an11, i_an12,                                                         &
+       l_process, ntotalq, ntotala,                                            &
+       i_qstart, i_nstart, i_m3start,                                          &
+       l_separate_rain, l_tidy_conserve_E, l_tidy_conserve_q,                  &
        l_passivenumbers, l_passivenumbers_ice
-  use mphys_constants, only: Lv, Ls, cp
+  use mphys_constants, only: Lv, Ls, cpd => cp, Tm
+  use casim_cpm_mod,   only: cpv_cpm, cl_cpm, ci_cpm
   use qsat_funs, only: qisaturation
   use mphys_parameters, only: hydro_params
   use mphys_die, only: throw_mphys_error, bad_values, warn, std_msg
@@ -187,6 +188,7 @@ contains
     logical :: an11_reset, an12_reset
 
     real(wp) :: dmass, dnumber
+    real(wp) :: T, cpm, Lv_full, Ls_full
 
     logical :: l_qsig(0:ntotalq), l_qpos, l_qsmall, l_qsneg(0:ntotalq)
     !    l_qpos: q variable is positive
@@ -212,6 +214,14 @@ contains
     l_qsneg(0)=.false.
     
     do k = 1, nz
+    T = qfields(k,i_th) * exner(k,ixy_inner)
+    cpm = cpd + cpv_cpm*qfields(k,i_qv)                                        &
+              + cl_cpm*(qfields(k,i_ql) + qfields(k,i_qr))
+    if (.not. l_warm) then
+      cpm = cpm + ci_cpm*(qfields(k,i_qi) + qfields(k,i_qs) + qfields(k,i_qg))
+    end if
+    Lv_full = Lv - (cl_cpm - cpv_cpm)*(T - Tm)
+    Ls_full = Ls - (ci_cpm - cpv_cpm)*(T - Tm)
     nr_reset=.false.
     m3r_reset=.false.
     qi_reset=.false.
@@ -398,8 +408,13 @@ contains
     if (ql_reset .or. nl_reset) then
       dmass=qfields(k, i_ql)/dt
       procs(i_ql,i_proc%id)%column_data(k)=-dmass
-      if (l_tidy_conserve_q)procs(i_qv,i_proc%id)%column_data(k)=dmass
-      if (l_tidy_conserve_E)procs(i_th,i_proc%id)%column_data(k)=-Lv*dmass/cp/exner(k,ixy_inner)
+      if (l_tidy_conserve_q) then
+        procs(i_qv,i_proc%id)%column_data(k) = dmass
+        cpm = cpm + (cpv_cpm - cl_cpm)*qfields(k,i_ql)
+      end if
+      if (l_tidy_conserve_E) then
+        procs(i_th,i_proc%id)%column_data(k) = -Lv_full*dmass/cpm/exner(k,ixy_inner)
+      end if
       if (l_2mc) then
         dnumber=qfields(k, i_nl)/dt
         procs(i_nl,i_proc%id)%column_data(k)=-dnumber
@@ -432,10 +447,15 @@ contains
     if (qr_reset .or. nr_reset .or. m3r_reset) then
       dmass=qfields(k, i_qr)/dt
       procs(i_qr,i_proc%id)%column_data(k)=-dmass
-      if (l_tidy_conserve_q) procs(i_qv,i_proc%id)%column_data(k)=             &
-                                   procs(i_qv,i_proc%id)%column_data(k) + dmass
-      if (l_tidy_conserve_E) procs(i_th,i_proc%id)%column_data(k)=             &
-          procs(i_th,i_proc%id)%column_data(k) - Lv*dmass/cp/exner(k,ixy_inner)
+      if (l_tidy_conserve_q) then
+        procs(i_qv,i_proc%id)%column_data(k)                                   &
+          = procs(i_qv,i_proc%id)%column_data(k) + dmass
+        cpm = cpm + (cpv_cpm - cl_cpm)*qfields(k,i_qr)
+      end if
+      if (l_tidy_conserve_E) then
+        procs(i_th,i_proc%id)%column_data(k) =                                 &
+          procs(i_th,i_proc%id)%column_data(k) - Lv_full*dmass/cpm/exner(k,ixy_inner)
+      end if
       if (l_2mr) then
         dnumber=qfields(k, i_nr)/dt
         procs(i_nr,i_proc%id)%column_data(k)=-dnumber
@@ -479,10 +499,15 @@ contains
       if (qi_reset .or. ni_reset) then
         dmass=qfields(k, i_qi)/dt
         procs(i_qi,i_proc%id)%column_data(k)=-dmass
-        if (l_tidy_conserve_q) procs(i_qv,i_proc%id)%column_data(k)=           &
-                                     procs(i_qv,i_proc%id)%column_data(k)+dmass
-        if (l_tidy_conserve_E) procs(i_th,i_proc%id)%column_data(k)=           &
-            procs(i_th,i_proc%id)%column_data(k)-Ls*dmass/cp/exner(k,ixy_inner)
+        if (l_tidy_conserve_q) then
+          procs(i_qv,i_proc%id)%column_data(k)                                 &
+            = procs(i_qv,i_proc%id)%column_data(k) + dmass
+          cpm = cpm + (cpv_cpm - ci_cpm)*qfields(k,i_qi)
+        end if
+        if (l_tidy_conserve_E) then
+          procs(i_th,i_proc%id)%column_data(k)                                 &
+            = procs(i_th,i_proc%id)%column_data(k) - Ls_full*dmass/cpm/exner(k,ixy_inner)
+        end if
         if (l_2mi) then
           dnumber=qfields(k, i_ni)/dt
           procs(i_ni,i_proc%id)%column_data(k)=-dnumber
@@ -511,10 +536,15 @@ contains
       if (qs_reset .or. ns_reset .or. m3s_reset) then
         dmass=qfields(k, i_qs)/dt
         procs(i_qs,i_proc%id)%column_data(k)=-dmass
-        if (l_tidy_conserve_q) procs(i_qv,i_proc%id)%column_data(k)=           &
-                                     procs(i_qv,i_proc%id)%column_data(k)+dmass
-        if (l_tidy_conserve_E) procs(i_th,i_proc%id)%column_data(k)=           &
-            procs(i_th,i_proc%id)%column_data(k)-Ls*dmass/cp/exner(k,ixy_inner)
+        if (l_tidy_conserve_q) then
+          procs(i_qv,i_proc%id)%column_data(k)                                 &
+            = procs(i_qv,i_proc%id)%column_data(k) + dmass
+          cpm = cpm + (cpv_cpm - ci_cpm)*qfields(k,i_qs)
+        end if
+        if (l_tidy_conserve_E) then
+          procs(i_th,i_proc%id)%column_data(k)                                 &
+            = procs(i_th,i_proc%id)%column_data(k) - Ls_full*dmass/cpm/exner(k,ixy_inner)
+        end if
         if (l_2ms) then
           dnumber=qfields(k, i_ns)/dt
           procs(i_ns,i_proc%id)%column_data(k)=-dnumber
@@ -546,10 +576,15 @@ contains
       if (qg_reset .or. ng_reset .or. m3g_reset) then
         dmass=qfields(k, i_qg)/dt
         procs(i_qg,i_proc%id)%column_data(k)=-dmass
-        if (l_tidy_conserve_q)procs(i_qv,i_proc%id)%column_data(k)=            &
-                                     procs(i_qv,i_proc%id)%column_data(k)+dmass
-        if (l_tidy_conserve_E)procs(i_th,i_proc%id)%column_data(k)=            &
-            procs(i_th,i_proc%id)%column_data(k)-Ls*dmass/cp/exner(k,ixy_inner)
+        if (l_tidy_conserve_q) then
+          procs(i_qv,i_proc%id)%column_data(k)                                 &
+            = procs(i_qv,i_proc%id)%column_data(k) + dmass
+          cpm = cpm + (cpv_cpm - ci_cpm)*qfields(k,i_qg)
+        end if
+        if (l_tidy_conserve_E) then
+          procs(i_th,i_proc%id)%column_data(k)                                 &
+            = procs(i_th,i_proc%id)%column_data(k) - Ls_full*dmass/cpm/exner(k,ixy_inner)
+        end if
         if (l_2mg) then
           dnumber=qfields(k, i_ng)/dt
           procs(i_ng,i_proc%id)%column_data(k)=-dnumber
@@ -653,6 +688,7 @@ contains
     logical :: qi_reset, ni_reset, qs_reset, ns_reset, m3s_reset
     logical :: qg_reset, ng_reset, m3g_reset
     integer :: k
+    real(wp) :: T, cpm, Lv_full, Ls_full
 
     INTEGER(KIND=jpim), PARAMETER :: zhook_in  = 0
     INTEGER(KIND=jpim), PARAMETER :: zhook_out = 1
@@ -674,6 +710,14 @@ contains
     end if
 
     do k=1, ubound(qfields,1)
+      T = qfields(k,i_th) * exner(k,ixy_inner)
+      cpm = cpd + cpv_cpm*qfields(k,i_qv)                                      &
+                + cl_cpm*(qfields(k,i_ql) + qfields(k,i_qr))
+      if (.not. l_warm) then
+        cpm = cpm + ci_cpm*(qfields(k,i_qi) + qfields(k,i_qs) + qfields(k,i_qg))
+      end if
+      Lv_full = Lv - (cl_cpm - cpv_cpm)*(T - Tm)
+      Ls_full = Ls - (ci_cpm - cpv_cpm)*(T - Tm)
       nl_reset=.false.
       nr_reset=.false.
       m3r_reset=.false.
@@ -746,8 +790,13 @@ contains
       ! Now reset things...
       !==============================
       if (ql_reset .or. nl_reset) then
-        if (l_tidy_conserve_E) qfields(k,i_th)=qfields(k,i_th)-Lv/cp*qfields(k,i_ql)/exner(k,ixy_inner)
-        if (l_tidy_conserve_q) qfields(k,i_qv)=qfields(k,i_qv)+qfields(k,i_ql)
+        if (l_tidy_conserve_q) then
+          qfields(k,i_qv) = qfields(k,i_qv) + qfields(k,i_ql)
+          cpm = cpm + (cpv_cpm - cl_cpm)*qfields(k,i_ql)
+        end if
+        if (l_tidy_conserve_E) then
+          qfields(k,i_th) = qfields(k,i_th)-Lv_full/cpm*qfields(k,i_ql)/exner(k,ixy_inner)
+        end if
         qfields(k,i_ql)=0.0
         if (l_2mc) then
           qfields(k,i_nl)=0.0
@@ -755,8 +804,13 @@ contains
       end if
 
       if (qr_reset .or. nr_reset .or. m3r_reset) then
-        if (l_tidy_conserve_E) qfields(k,i_th)=qfields(k,i_th)-Lv/cp*qfields(k,i_qr)/exner(k,ixy_inner)
-        if (l_tidy_conserve_q) qfields(k,i_qv)=qfields(k,i_qv)+qfields(k,i_qr)
+        if (l_tidy_conserve_q) then
+          qfields(k,i_qv) = qfields(k,i_qv) + qfields(k,i_qr)
+          cpm = cpm + (cpv_cpm - cl_cpm)*qfields(k,i_qr)
+        end if
+        if (l_tidy_conserve_E) then
+          qfields(k,i_th)=qfields(k,i_th) - Lv_full/cpm*qfields(k,i_qr)/exner(k,ixy_inner)
+        end if
         qfields(k,i_qr)=0.0
         if (l_2mr) then
           qfields(k,i_nr)=0.0
@@ -767,8 +821,13 @@ contains
       end if
 
       if (qi_reset .or. ni_reset) then
-        if (l_tidy_conserve_E) qfields(k,i_th)=qfields(k,i_th)-Ls/cp*qfields(k,i_qi)/exner(k,ixy_inner)
-        if (l_tidy_conserve_q) qfields(k,i_qv)=qfields(k,i_qv)+qfields(k,i_qi)
+        if (l_tidy_conserve_q) then
+          qfields(k,i_qv) = qfields(k,i_qv) + qfields(k,i_qi)
+          cpm = cpm + (cpv_cpm - ci_cpm)*qfields(k,i_qi)
+        end if
+        if (l_tidy_conserve_E) then
+          qfields(k,i_th) = qfields(k,i_th) - Ls_full/cpm*qfields(k,i_qi)/exner(k,ixy_inner)
+        end if
         qfields(k,i_qi)=0.0
         if (l_2mi) then
           qfields(k,i_ni)=0.0
@@ -776,8 +835,13 @@ contains
       end if
 
       if (qs_reset .or. ns_reset .or. m3s_reset) then
-        if (l_tidy_conserve_E) qfields(k,i_th)=qfields(k,i_th)-Ls/cp*qfields(k,i_qs)/exner(k,ixy_inner)
-        if (l_tidy_conserve_q) qfields(k,i_qv)=qfields(k,i_qv)+qfields(k,i_qs)
+        if (l_tidy_conserve_q) then
+          qfields(k,i_qv) = qfields(k,i_qv) + qfields(k,i_qs)
+          cpm = cpm + (cpv_cpm - ci_cpm)*qfields(k,i_qs)
+        end if
+        if (l_tidy_conserve_E) then
+          qfields(k,i_th) = qfields(k,i_th) - Ls_full/cpm*qfields(k,i_qs)/exner(k,ixy_inner)
+        end if
         qfields(k,i_qs)=0.0
         if (l_2ms) then
           qfields(k,i_ns)=0.0
@@ -788,8 +852,13 @@ contains
       end if
 
       if (qg_reset .or. ng_reset .or. m3g_reset) then
-        if (l_tidy_conserve_E) qfields(k,i_th)=qfields(k,i_th)-Ls/cp*qfields(k,i_qg)/exner(k,ixy_inner)
-        if (l_tidy_conserve_q) qfields(k,i_qv)=qfields(k,i_qv)+qfields(k,i_qg)
+        if (l_tidy_conserve_q) then
+          qfields(k,i_qv) = qfields(k,i_qv) + qfields(k,i_qg)
+          cpm = cpm + (cpv_cpm - ci_cpm)*qfields(k,i_qg)
+        end if
+        if (l_tidy_conserve_E) then
+          qfields(k,i_th) = qfields(k,i_th) - Ls_full/cpm*qfields(k,i_qg)/exner(k,ixy_inner)
+        end if
         qfields(k,i_qg)=0.0
         if (l_2mg) then
           qfields(k,i_ng)=0.0
@@ -880,8 +949,8 @@ contains
   ! Subroutine to ensure parallel processes don't remove more
     ! mass than is available and then rescales all processes
     ! (including number and other terms)
-  subroutine ensure_positive(nz, dt, qfields, procs, params, iprocs_scalable, &
-                             iprocs_nonscalable, aeroprocs, iprocs_dependent, &
+  subroutine ensure_positive(nz, dt, qfields, procs, params, iprocs_scalable,  &
+                             iprocs_nonscalable, aeroprocs, iprocs_dependent,  &
                              iprocs_dependent_ns)
 
     USE yomhook, ONLY: lhook, dr_hook
@@ -898,17 +967,17 @@ contains
 
     type(hydro_params), intent(in) :: params        ! parameters from hydrometeor variable to test
     type(process_name), intent(in) :: iprocs_scalable(:)    ! list of processes to rescale
-    type(process_name), intent(in), optional ::      &
+    type(process_name), intent(in), optional ::                                &
          iprocs_nonscalable(:) ! list of other processes which
     ! provide source or sink, but
     ! which we don't want to rescale
-    type(process_rate), intent(inout), optional ::   &
+    type(process_rate), intent(inout), optional ::                             &
          aeroprocs(:,:)        ! associated aerosol process rates
-    type(process_name), intent(in), optional ::      &
+    type(process_name), intent(in), optional ::                                &
          iprocs_dependent(:)   ! list of aerosol processes which
     ! are dependent on rescaled processes and
     ! so should be rescaled themselves
-    type(process_name), intent(in), optional ::      &
+    type(process_name), intent(in), optional ::                                &
          iprocs_dependent_ns(:)   ! list of aerosol processes which
     ! are dependent on rescaled processes but
     ! we don't want to rescale
